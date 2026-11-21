@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\V1\Catalog;
 use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Product;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class CatalogController extends Controller
 {
@@ -45,5 +47,38 @@ class CatalogController extends Controller
                 ->orderByPivot('sort_order')
                 ->get()
         );
+    }
+
+    public function products(Request $request): JsonResponse
+    {
+        $query = Product::query()
+            ->where('status', 'approved')
+            ->whereHas('variants', fn ($q) => $q->where('is_active', true)
+                ->whereHas('offers', fn ($offer) => $offer->where('status', 'active')
+                    ->whereHas('sellerAccount', fn ($seller) => $seller->where('status', 'approved'))
+                    ->whereHas('inventory', fn ($inventory) => $inventory->whereRaw(
+                        'quantity_on_hand > quantity_reserved + quantity_damaged'
+                    ))))
+            ->with(['category:id,name,slug', 'brand:id,name,slug', 'variants.offers' => function ($q) {
+                $q->where('status', 'active')
+                    ->whereHas('sellerAccount', fn ($seller) => $seller->where('status', 'approved'))
+                    ->with('inventory');
+            }]);
+
+        if ($request->filled('q')) {
+            $term = trim((string) $request->query('q'));
+            $query->where(function ($builder) use ($term) {
+                $builder->where('name', 'like', '%'.$term.'%')
+                    ->orWhere('description', 'like', '%'.$term.'%');
+            });
+        }
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->integer('category_id'));
+        }
+        if ($request->filled('brand_id')) {
+            $query->where('brand_id', $request->integer('brand_id'));
+        }
+
+        return ApiResponse::success($query->latest()->paginate(min(50, max(1, $request->integer('per_page', 20)))));
     }
 }

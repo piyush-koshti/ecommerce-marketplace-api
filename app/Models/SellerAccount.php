@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SellerAccount extends Model
 {
@@ -35,6 +36,11 @@ class SellerAccount extends Model
         return $this->belongsToMany(User::class, 'seller_users')
             ->withPivot(['membership_role', 'status', 'assigned_by'])
             ->withTimestamps();
+    }
+
+    public function offers(): HasMany
+    {
+        return $this->hasMany(SellerOffer::class);
     }
 
     public function reviewer(): BelongsTo

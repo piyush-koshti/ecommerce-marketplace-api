@@ -165,3 +165,70 @@ The seeder is repeatable and synchronizes role-permission assignments. Review pe
 - `.env`, SQLite files, logs, cache artifacts and vendor dependencies are excluded from the delivery ZIP.
 - Commit `.env.example`, migrations, source code, tests and documentation.
 - Review `git status` before the first commit.
+
+
+## Phase 4 — Product catalogue, variants and SKU management
+
+Implemented API foundations:
+- Shared `products` catalogue with category/brand, creator, moderation state and tax-classification reference field.
+- `product_variants` with category attribute values (JSON), barcode and shipping dimensions/weight.
+- Product media metadata and seller upload endpoint (JPG/JPEG/PNG/WebP, max 5 MB).
+- Seller product draft and submission workflow; admin approve/reject workflow.
+- Public product browse endpoint returns approved products and active offers from approved sellers.
+- Required category attributes are checked against each active variant when a seller submits a product.
+- Seller SKU is stored on the seller offer, not on the shared product variant.
+
+## Phase 5 — Seller offers and inventory management
+
+Implemented API foundations:
+- Seller-specific offer records with unique seller SKU per seller and one offer per seller/variant.
+- Offer activation requires an approved seller and an approved product variant.
+- Seller-managed inventory for MVP; inventory is one record per offer (no multi-warehouse allocation).
+- Transactional stock adjustment with row locking and immutable before/after movement records.
+- Low-stock threshold field and update endpoint.
+- Reservation service supports reserve/release/commit with transaction locks for later checkout integration.
+
+### New migration and setup commands
+
+Run additive migrations only (do not use `migrate:fresh`):
+
+```bash
+php artisan migrate
+php artisan optimize:clear
+php artisan test
+vendor\bin\pint.bat --test
+```
+
+If product images are served from Laravel's public disk, create the storage link once:
+
+```bash
+php artisan storage:link
+```
+
+### Phase 4/5 API routes
+
+- `GET /api/v1/catalog/products`
+- `GET|POST /api/v1/seller/accounts/{sellerAccount}/products`
+- `GET|PUT /api/v1/seller/accounts/{sellerAccount}/products/{product}`
+- `POST /api/v1/seller/accounts/{sellerAccount}/products/{product}/submit`
+- `POST /api/v1/seller/accounts/{sellerAccount}/products/{product}/media`
+- `DELETE /api/v1/seller/accounts/{sellerAccount}/products/{product}/media/{media}`
+- `GET /api/v1/admin/products`
+- `POST /api/v1/admin/products/{product}/approve`
+- `POST /api/v1/admin/products/{product}/reject`\n- `PATCH /api/v1/admin/products/{product}/status` (inactive/archived)
+- `GET|POST /api/v1/seller/accounts/{sellerAccount}/offers`
+- `PUT /api/v1/seller/accounts/{sellerAccount}/offers/{offer}`
+- `POST /api/v1/seller/accounts/{sellerAccount}/offers/{offer}/activate`
+- `POST /api/v1/seller/accounts/{sellerAccount}/offers/{offer}/deactivate`
+- `GET /api/v1/seller/accounts/{sellerAccount}/offers/{offer}/inventory`
+- `POST /api/v1/seller/accounts/{sellerAccount}/offers/{offer}/inventory/adjust`
+- `PUT /api/v1/seller/accounts/{sellerAccount}/offers/{offer}/inventory/threshold`
+
+### Explicit implementation boundaries
+
+- Seller-managed inventory is implemented for the MVP. Multi-warehouse stock allocation is deferred.
+- Reservation service is present for checkout integration; this phase does not create a cart/checkout/payment workflow or automatically expire reservations through a scheduler.
+- Image upload validates file type and size and stores through Laravel's configured `public` disk. Malware scanning, image derivative generation and production object-storage configuration still need infrastructure integration.
+- Tax classification is stored as a reference field only. No GST rate or tax formula is inferred.
+- Seller SKU is supplied by the seller; no SKU generation format is assumed.
+- Bulk product import, row-level import reports and idempotent re-import are not part of these two phase deliverables yet.

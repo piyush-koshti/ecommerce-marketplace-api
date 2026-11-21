@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\Admin\AttributeController;
 use App\Http\Controllers\Api\V1\Admin\BrandController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController;
+use App\Http\Controllers\Api\V1\Admin\ProductModerationController;
 use App\Http\Controllers\Api\V1\Admin\SellerReviewController;
 use App\Http\Controllers\Api\V1\Auth\EmailOtpController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationController;
@@ -14,7 +15,11 @@ use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Catalog\CatalogController;
 use App\Http\Controllers\Api\V1\Customer\AddressController;
 use App\Http\Controllers\Api\V1\Customer\CustomerProfileController;
+use App\Http\Controllers\Api\V1\Seller\InventoryController;
+use App\Http\Controllers\Api\V1\Seller\ProductMediaController;
 use App\Http\Controllers\Api\V1\Seller\SellerAccountController;
+use App\Http\Controllers\Api\V1\Seller\SellerOfferController;
+use App\Http\Controllers\Api\V1\Seller\SellerProductController;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -56,6 +61,7 @@ Route::prefix('v1')
         Route::prefix('catalog')->name('catalog.')->group(function (): void {
             Route::get('/categories', [CatalogController::class, 'categories'])->name('categories');
             Route::get('/brands', [CatalogController::class, 'brands'])->name('brands');
+            Route::get('/products', [CatalogController::class, 'products'])->name('products');
             Route::get('/categories/{category}/attributes', [
                 CatalogController::class, 'categoryAttributes',
             ])->name('category-attributes');
@@ -94,6 +100,56 @@ Route::prefix('v1')
                 Route::put('/profile', [CustomerProfileController::class, 'update'])->name('profile.update');
                 Route::apiResource('addresses', AddressController::class);
             });
+
+            // Phase 4: Seller-owned catalogue submissions and media.
+            Route::prefix('seller/accounts/{sellerAccount}')->name('seller.accounts.')
+                ->group(function (): void {
+                    Route::get('/products', [SellerProductController::class, 'index'])->name('products.index');
+                    Route::post('/products', [SellerProductController::class, 'store'])
+                        ->middleware('permission:products.create')->name('products.store');
+                    Route::get('/products/{product}', [SellerProductController::class, 'show'])
+                        ->middleware('permission:products.view')->name('products.show');
+                    Route::put('/products/{product}', [SellerProductController::class, 'update'])
+                        ->middleware('permission:products.update')->name('products.update');
+                    Route::post('/products/{product}/submit', [SellerProductController::class, 'submit'])
+                        ->middleware('permission:products.update')->name('products.submit');
+                    Route::post('/products/{product}/media', [ProductMediaController::class, 'store'])
+                        ->middleware('permission:products.create')->name('products.media.store');
+                    Route::delete('/products/{product}/media/{media}', [ProductMediaController::class, 'destroy'])
+                        ->middleware('permission:products.update')->name('products.media.destroy');
+
+                    // Phase 5: Seller offers and seller-managed stock (MVP).
+                    Route::get('/offers', [SellerOfferController::class, 'index'])
+                        ->middleware('permission:products.view')->name('offers.index');
+                    Route::post('/offers', [SellerOfferController::class, 'store'])
+                        ->middleware('permission:products.create')->name('offers.store');
+                    Route::put('/offers/{offer}', [SellerOfferController::class, 'update'])
+                        ->middleware('permission:products.update')->name('offers.update');
+                    Route::post('/offers/{offer}/activate', [SellerOfferController::class, 'activate'])
+                        ->middleware('permission:products.update')->name('offers.activate');
+                    Route::post('/offers/{offer}/deactivate', [SellerOfferController::class, 'deactivate'])
+                        ->middleware('permission:products.update')->name('offers.deactivate');
+                    Route::get('/offers/{offer}/inventory', [InventoryController::class, 'show'])
+                        ->middleware('permission:inventory.view')->name('inventory.show');
+                    Route::post('/offers/{offer}/inventory/adjust', [InventoryController::class, 'adjust'])
+                        ->middleware('permission:inventory.manage')->name('inventory.adjust');
+                    Route::put('/offers/{offer}/inventory/threshold', [InventoryController::class, 'threshold'])
+                        ->middleware('permission:inventory.manage')->name('inventory.threshold');
+                });
+
+            // Phase 4: Catalogue moderation.
+            Route::prefix('admin/products')->name('admin.products.')
+                ->middleware('role:super_admin,operations_admin')
+                ->group(function (): void {
+                    Route::get('/', [ProductModerationController::class, 'index'])
+                        ->middleware('permission:products.view')->name('index');
+                    Route::post('/{product}/approve', [ProductModerationController::class, 'approve'])
+                        ->middleware('permission:products.approve')->name('approve');
+                    Route::post('/{product}/reject', [ProductModerationController::class, 'reject'])
+                        ->middleware('permission:products.approve')->name('reject');
+                    Route::patch('/{product}/status', [ProductModerationController::class, 'setStatus'])
+                        ->middleware('permission:products.approve')->name('status');
+                });
 
             // Phase 1: Marketplace seller review actions.
             Route::prefix('admin/sellers')->name('admin.sellers.')
