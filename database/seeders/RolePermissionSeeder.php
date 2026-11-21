@@ -84,6 +84,7 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'sellers.view', 'module' => 'sellers', 'display_name' => 'View Sellers'],
             ['name' => 'sellers.approve', 'module' => 'sellers', 'display_name' => 'Approve Sellers'],
             ['name' => 'sellers.suspend', 'module' => 'sellers', 'display_name' => 'Suspend Sellers'],
+            ['name' => 'seller_staff.manage', 'module' => 'sellers', 'display_name' => 'Manage Seller Staff'],
 
             ['name' => 'products.view', 'module' => 'products', 'display_name' => 'View Products'],
             ['name' => 'products.create', 'module' => 'products', 'display_name' => 'Create Products'],
@@ -113,6 +114,21 @@ class RolePermissionSeeder extends Seeder
 
             ['name' => 'permissions.view', 'module' => 'permissions', 'display_name' => 'View Permissions'],
             ['name' => 'permissions.manage', 'module' => 'permissions', 'display_name' => 'Manage Permissions'],
+
+            ['name' => 'categories.view', 'module' => 'categories', 'display_name' => 'View Categories'],
+            ['name' => 'categories.create', 'module' => 'categories', 'display_name' => 'Create Categories'],
+            ['name' => 'categories.update', 'module' => 'categories', 'display_name' => 'Update Categories'],
+            ['name' => 'categories.delete', 'module' => 'categories', 'display_name' => 'Delete Categories'],
+
+            ['name' => 'brands.view', 'module' => 'brands', 'display_name' => 'View Brands'],
+            ['name' => 'brands.create', 'module' => 'brands', 'display_name' => 'Create Brands'],
+            ['name' => 'brands.update', 'module' => 'brands', 'display_name' => 'Update Brands'],
+            ['name' => 'brands.delete', 'module' => 'brands', 'display_name' => 'Delete Brands'],
+
+            ['name' => 'attributes.view', 'module' => 'attributes', 'display_name' => 'View Attributes'],
+            ['name' => 'attributes.create', 'module' => 'attributes', 'display_name' => 'Create Attributes'],
+            ['name' => 'attributes.update', 'module' => 'attributes', 'display_name' => 'Update Attributes'],
+            ['name' => 'attributes.delete', 'module' => 'attributes', 'display_name' => 'Delete Attributes'],
         ];
 
         foreach ($permissions as $permission) {
@@ -140,6 +156,7 @@ class RolePermissionSeeder extends Seeder
                 'orders.manage',
                 'inventory.view',
                 'inventory.manage',
+                'seller_staff.manage',
             ],
 
             'seller_staff' => [],
@@ -158,6 +175,18 @@ class RolePermissionSeeder extends Seeder
                 'products.approve',
                 'orders.view',
                 'orders.manage',
+                'categories.view',
+                'categories.create',
+                'categories.update',
+                'categories.delete',
+                'brands.view',
+                'brands.create',
+                'brands.update',
+                'brands.delete',
+                'attributes.view',
+                'attributes.create',
+                'attributes.update',
+                'attributes.delete',
             ],
 
             'finance_admin' => [

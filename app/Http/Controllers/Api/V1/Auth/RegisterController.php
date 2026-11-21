@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Role;
 use App\Models\User;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -28,6 +29,18 @@ class RegisterController extends Controller
                 'mobile' => $validated['mobile'],
                 'password' => $validated['password'],
             ]);
+
+            $customerRole = Role::firstOrCreate(
+                ['name' => 'customer'],
+                [
+                    'group_key' => 'customer',
+                    'display_name' => 'Customer',
+                    'description' => 'Customer account and shopping access.',
+                    'is_system' => true,
+                ]
+            );
+
+            $user->roles()->syncWithoutDetaching([$customerRole->id]);
 
             $token = $user->createToken('customer-api');
 

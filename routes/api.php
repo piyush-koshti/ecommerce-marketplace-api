@@ -1,6 +1,9 @@
-
 <?php
 
+use App\Http\Controllers\Api\V1\Admin\AttributeController;
+use App\Http\Controllers\Api\V1\Admin\BrandController;
+use App\Http\Controllers\Api\V1\Admin\CategoryController;
+use App\Http\Controllers\Api\V1\Admin\SellerReviewController;
 use App\Http\Controllers\Api\V1\Auth\EmailOtpController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationController;
 use App\Http\Controllers\Api\V1\Auth\ForgotPasswordController;
@@ -8,6 +11,10 @@ use App\Http\Controllers\Api\V1\Auth\LoginController;
 use App\Http\Controllers\Api\V1\Auth\LogoutAllController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
+use App\Http\Controllers\Api\V1\Catalog\CatalogController;
+use App\Http\Controllers\Api\V1\Customer\AddressController;
+use App\Http\Controllers\Api\V1\Customer\CustomerProfileController;
+use App\Http\Controllers\Api\V1\Seller\SellerAccountController;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -16,11 +23,6 @@ Route::prefix('v1')
     ->name('api.v1.')
     ->middleware('throttle:api')
     ->group(function (): void {
-
-        // -------------------------------------------------
-        // HEALTH CHECK
-        // -------------------------------------------------
-
         Route::get('/health', function () {
             return ApiResponse::success([
                 'status' => 'ok',
@@ -28,61 +30,42 @@ Route::prefix('v1')
             ]);
         })->name('health');
 
-        // -------------------------------------------------
-        // PUBLIC AUTHENTICATION ROUTES
-        // -------------------------------------------------
-
         Route::prefix('auth')->name('auth.')->group(function (): void {
-
             Route::post('/register', RegisterController::class)
-                ->middleware('throttle:5,1')
-                ->name('register');
-
+                ->middleware('throttle:5,1')->name('register');
             Route::post('/login', LoginController::class)
-                ->middleware('throttle:5,1')
-                ->name('login');
-
+                ->middleware('throttle:5,1')->name('login');
             Route::post('/email/verification-notification', [
-                EmailVerificationController::class,
-                'send',
+                EmailVerificationController::class, 'send',
             ])->middleware(['auth:sanctum', 'throttle:3,1'])
                 ->name('email.verification-notification');
-
             Route::get('/email/verify/{id}/{hash}', [
-                EmailVerificationController::class,
-                'verify',
-            ])->middleware(['signed', 'throttle:10,1'])
-                ->name('email.verify');
-
+                EmailVerificationController::class, 'verify',
+            ])->middleware(['signed', 'throttle:10,1'])->name('email.verify');
             Route::post('/otp/send', [EmailOtpController::class, 'send'])
-                ->middleware('throttle:5,1')
-                ->name('otp.send');
-
+                ->middleware('throttle:5,1')->name('otp.send');
             Route::post('/otp/verify', [EmailOtpController::class, 'verify'])
-                ->middleware('throttle:10,1')
-                ->name('otp.verify');
-
+                ->middleware('throttle:10,1')->name('otp.verify');
             Route::post('/forgot-password', ForgotPasswordController::class)
-                ->middleware('throttle:5,1')
-                ->name('forgot-password');
-
+                ->middleware('throttle:5,1')->name('forgot-password');
             Route::post('/reset-password', ResetPasswordController::class)
-                ->middleware('throttle:5,1')
-                ->name('reset-password');
+                ->middleware('throttle:5,1')->name('reset-password');
         });
 
-        // -------------------------------------------------
-        // AUTHENTICATED USER ROUTES
-        // -------------------------------------------------
+        // Public catalogue discovery.
+        Route::prefix('catalog')->name('catalog.')->group(function (): void {
+            Route::get('/categories', [CatalogController::class, 'categories'])->name('categories');
+            Route::get('/brands', [CatalogController::class, 'brands'])->name('brands');
+            Route::get('/categories/{category}/attributes', [
+                CatalogController::class, 'categoryAttributes',
+            ])->name('category-attributes');
+        });
 
         Route::middleware('auth:sanctum')->group(function (): void {
-
             Route::post('/auth/logout', function (Request $request) {
                 $request->user()->currentAccessToken()->delete();
 
-                return ApiResponse::success([
-                    'message' => 'Logged out successfully.',
-                ]);
+                return ApiResponse::success(['message' => 'Logged out successfully.']);
             })->name('auth.logout');
 
             Route::post('/auth/logout-all', LogoutAllController::class)
@@ -91,93 +74,80 @@ Route::prefix('v1')
             Route::get('/user', function (Request $request) {
                 return ApiResponse::success($request->user());
             })->name('user');
-        });
 
-        // -------------------------------------------------
-        // RBAC PROTECTED MODULE ROUTES
-        // Add module routes here as they are implemented.
-        // -------------------------------------------------
+            // Phase 1: Seller organisation and seller-user membership.
+            Route::prefix('seller/accounts')->name('seller.accounts.')->group(function (): void {
+                Route::get('/', [SellerAccountController::class, 'index'])->name('index');
+                Route::post('/', [SellerAccountController::class, 'store'])->name('store');
+                Route::get('/{sellerAccount}', [SellerAccountController::class, 'show'])->name('show');
+                Route::post('/{sellerAccount}/staff', [
+                    SellerAccountController::class, 'addStaff',
+                ])->middleware('permission:seller_staff.manage')->name('staff.store');
+                Route::delete('/{sellerAccount}/staff/{user}', [
+                    SellerAccountController::class, 'removeStaff',
+                ])->middleware('permission:seller_staff.manage')->name('staff.destroy');
+            });
 
-        // SUPER ADMIN
-        Route::middleware([
-            'auth:sanctum',
-            'role:super_admin',
-        ])->prefix('admin')->name('admin.')->group(function (): void {
+            // Phase 2: Customer profile and addresses. All queries are owner-scoped.
+            Route::prefix('customer')->name('customer.')->group(function (): void {
+                Route::get('/profile', [CustomerProfileController::class, 'show'])->name('profile.show');
+                Route::put('/profile', [CustomerProfileController::class, 'update'])->name('profile.update');
+                Route::apiResource('addresses', AddressController::class);
+            });
 
-            // Future global administration routes.
-            // Example:
-            // Route::get('/roles', ...)->middleware('permission:roles.view');
-        });
+            // Phase 1: Marketplace seller review actions.
+            Route::prefix('admin/sellers')->name('admin.sellers.')
+                ->middleware('role:super_admin,operations_admin')
+                ->group(function (): void {
+                    Route::get('/', [SellerReviewController::class, 'index'])
+                        ->middleware('permission:sellers.view')->name('index');
+                    Route::post('/{sellerAccount}/approve', [SellerReviewController::class, 'approve'])
+                        ->middleware('permission:sellers.approve')->name('approve');
+                    Route::post('/{sellerAccount}/reject', [SellerReviewController::class, 'reject'])
+                        ->middleware('permission:sellers.approve')->name('reject');
+                    Route::post('/{sellerAccount}/suspend', [SellerReviewController::class, 'suspend'])
+                        ->middleware('permission:sellers.suspend')->name('suspend');
+                });
 
-        // OPERATIONS ADMIN
-        Route::middleware([
-            'auth:sanctum',
-            'role:operations_admin',
-        ])->prefix('operations')->name('operations.')->group(function (): void {
+            // Phase 3: Taxonomy administration.
+            Route::prefix('admin')->name('admin.')
+                ->middleware('role:super_admin,operations_admin')
+                ->group(function (): void {
+                    Route::get('/categories', [CategoryController::class, 'index'])
+                        ->middleware('permission:categories.view')->name('categories.index');
+                    Route::post('/categories', [CategoryController::class, 'store'])
+                        ->middleware('permission:categories.create')->name('categories.store');
+                    Route::get('/categories/{category}', [CategoryController::class, 'show'])
+                        ->middleware('permission:categories.view')->name('categories.show');
+                    Route::put('/categories/{category}', [CategoryController::class, 'update'])
+                        ->middleware('permission:categories.update')->name('categories.update');
+                    Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])
+                        ->middleware('permission:categories.delete')->name('categories.destroy');
+                    Route::put('/categories/{category}/attributes', [
+                        CategoryController::class, 'syncAttributes',
+                    ])->middleware('permission:categories.update')->name('categories.attributes.sync');
 
-            // Future seller, catalogue and order operations.
-        });
+                    Route::get('/brands', [BrandController::class, 'index'])
+                        ->middleware('permission:brands.view')->name('brands.index');
+                    Route::post('/brands', [BrandController::class, 'store'])
+                        ->middleware('permission:brands.create')->name('brands.store');
+                    Route::get('/brands/{brand}', [BrandController::class, 'show'])
+                        ->middleware('permission:brands.view')->name('brands.show');
+                    Route::put('/brands/{brand}', [BrandController::class, 'update'])
+                        ->middleware('permission:brands.update')->name('brands.update');
+                    Route::delete('/brands/{brand}', [BrandController::class, 'destroy'])
+                        ->middleware('permission:brands.delete')->name('brands.destroy');
 
-        // SELLER OWNER
-        Route::middleware([
-            'auth:sanctum',
-            'role:seller_owner',
-        ])->prefix('seller')->name('seller.')->group(function (): void {
-
-            // Future seller-owned catalogue, orders and inventory.
-        });
-
-        // SELLER STAFF
-        Route::middleware([
-            'auth:sanctum',
-            'role:seller_staff',
-        ])->prefix('seller-staff')->name('seller-staff.')->group(function (): void {
-
-            // Future owner-assigned staff tasks.
-        });
-
-        // FINANCE ADMIN
-        Route::middleware([
-            'auth:sanctum',
-            'role:finance_admin',
-        ])->prefix('finance')->name('finance.')->group(function (): void {
-
-            // Future finance, reconciliation and payout routes.
-        });
-
-        // SUPPORT AGENT
-        Route::middleware([
-            'auth:sanctum',
-            'role:support_agent',
-        ])->prefix('support')->name('support.')->group(function (): void {
-
-            // Future support ticket routes.
-        });
-
-        // WAREHOUSE / FULFILMENT
-        Route::middleware([
-            'auth:sanctum',
-            'role:warehouse_fulfilment',
-        ])->prefix('warehouse')->name('warehouse.')->group(function (): void {
-
-            // Future warehouse and fulfilment routes.
-        });
-
-        // AUDITOR / ANALYST
-        Route::middleware([
-            'auth:sanctum',
-            'role:auditor_analyst',
-        ])->prefix('audit')->name('audit.')->group(function (): void {
-
-            // Future read-only reports and audit routes.
-        });
-
-        // CUSTOMER
-        Route::middleware([
-            'auth:sanctum',
-            'role:customer',
-        ])->prefix('customer')->name('customer.')->group(function (): void {
-
-            // Future customer account and order routes.
+                    Route::get('/attributes', [AttributeController::class, 'index'])
+                        ->middleware('permission:attributes.view')->name('attributes.index');
+                    Route::post('/attributes', [AttributeController::class, 'store'])
+                        ->middleware('permission:attributes.create')->name('attributes.store');
+                    Route::get('/attributes/{attribute}', [AttributeController::class, 'show'])
+                        ->middleware('permission:attributes.view')->name('attributes.show');
+                    Route::put('/attributes/{attribute}', [AttributeController::class, 'update'])
+                        ->middleware('permission:attributes.update')->name('attributes.update');
+                    Route::delete('/attributes/{attribute}', [AttributeController::class, 'destroy'])
+                        ->middleware('permission:attributes.delete')->name('attributes.destroy');
+                });
         });
     });
