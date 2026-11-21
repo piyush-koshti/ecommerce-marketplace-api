@@ -13,13 +13,19 @@ use App\Http\Controllers\Api\V1\Auth\LogoutAllController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\V1\Catalog\CatalogController;
+use App\Http\Controllers\Api\V1\Checkout\CheckoutController;
 use App\Http\Controllers\Api\V1\Customer\AddressController;
 use App\Http\Controllers\Api\V1\Customer\CustomerProfileController;
+use App\Http\Controllers\Api\V1\Orders\OrderController;
+use App\Http\Controllers\Api\V1\Payments\PaymentIntentController;
+use App\Http\Controllers\Api\V1\Payments\PaymentWebhookController;
 use App\Http\Controllers\Api\V1\Seller\InventoryController;
 use App\Http\Controllers\Api\V1\Seller\ProductMediaController;
 use App\Http\Controllers\Api\V1\Seller\SellerAccountController;
 use App\Http\Controllers\Api\V1\Seller\SellerOfferController;
 use App\Http\Controllers\Api\V1\Seller\SellerProductController;
+use App\Http\Controllers\Api\V1\Shopping\CartController;
+use App\Http\Controllers\Api\V1\Shopping\WishlistController;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -57,6 +63,19 @@ Route::prefix('v1')
                 ->middleware('throttle:5,1')->name('reset-password');
         });
 
+        // Guest and signed-in cart endpoints. Guest identity is a random token stored only as a hash.
+        Route::prefix('cart')->name('cart.')->group(function (): void {
+            Route::get('/', [CartController::class, 'show'])->name('show');
+            Route::post('/items', [CartController::class, 'add'])->name('items.add');
+            Route::patch('/items/{item}', [CartController::class, 'update'])->name('items.update');
+            Route::delete('/items/{item}', [CartController::class, 'remove'])->name('items.remove');
+        });
+
+        // Provider webhook uses HMAC verification; provider-specific adapters/secrets must be configured.
+        Route::post('/webhooks/payments/{provider}', [PaymentWebhookController::class, 'handle'])
+            ->where('provider', '[a-zA-Z0-9_-]+')->middleware('throttle:30,1')
+            ->name('webhooks.payments');
+
         // Public catalogue discovery.
         Route::prefix('catalog')->name('catalog.')->group(function (): void {
             Route::get('/categories', [CatalogController::class, 'categories'])->name('categories');
@@ -80,6 +99,28 @@ Route::prefix('v1')
             Route::get('/user', function (Request $request) {
                 return ApiResponse::success($request->user());
             })->name('user');
+
+            // Phase 6: Customer wishlist and safe guest-cart merge.
+            Route::prefix('wishlist')->name('wishlist.')->group(function (): void {
+                Route::get('/', [WishlistController::class, 'show'])->name('show');
+                Route::post('/items', [WishlistController::class, 'add'])->name('items.add');
+                Route::delete('/items/{item}', [WishlistController::class, 'remove'])->name('items.remove');
+            });
+            Route::post('/cart/merge-guest', [CartController::class, 'mergeGuest'])->name('cart.merge-guest');
+
+            // Phase 7: Server-side checkout quotes and order placement.
+            Route::post('/checkout/quote', [CheckoutController::class, 'quote'])->name('checkout.quote');
+            Route::post('/checkout/{checkout}/place', [CheckoutController::class, 'place'])->name('checkout.place');
+
+            // Phase 8: Payment intent is intentionally disabled until provider integration is configured.
+            Route::post('/orders/{order}/payment-intent', [PaymentIntentController::class, 'store'])->name('orders.payment-intent');
+
+            // Phase 9: Customer orders and seller fulfilment.
+            Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+            Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+            Route::get('/seller/accounts/{sellerAccount}/orders', [OrderController::class, 'sellerIndex'])->name('seller.orders.index');
+            Route::post('/seller/accounts/{sellerAccount}/orders/{sellerOrder}/shipments', [OrderController::class, 'createShipment'])->name('seller.orders.shipments.store');
+            Route::patch('/seller/accounts/{sellerAccount}/orders/{sellerOrder}/status', [OrderController::class, 'sellerStatus'])->name('seller.orders.status');
 
             // Phase 1: Seller organisation and seller-user membership.
             Route::prefix('seller/accounts')->name('seller.accounts.')->group(function (): void {

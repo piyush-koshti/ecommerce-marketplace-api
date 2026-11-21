@@ -52,9 +52,9 @@ class StockReservationService
         }, 3);
     }
 
-    public function commit(StockReservation $reservation): void
+    public function commit(StockReservation $reservation, ?int $actorId = null): void
     {
-        DB::transaction(function () use ($reservation) {
+        DB::transaction(function () use ($reservation, $actorId) {
             $lockedReservation = StockReservation::query()->lockForUpdate()->findOrFail($reservation->id);
 
             if ($lockedReservation->status !== 'reserved' || $lockedReservation->expires_at->isPast()) {
@@ -62,11 +62,47 @@ class StockReservationService
             }
 
             $item = InventoryItem::query()->lockForUpdate()->findOrFail($lockedReservation->inventory_item_id);
+            $before = $item->quantity_on_hand;
             $item->decrement('quantity_reserved', $lockedReservation->quantity);
             $item->decrement('quantity_on_hand', $lockedReservation->quantity);
             $item->increment('lock_version');
+            $item->movements()->create([
+                'actor_id' => $actorId,
+                'movement_type' => 'order_commit',
+                'reason' => 'Stock committed for accepted order.',
+                'reference_type' => $lockedReservation->reference_type,
+                'reference_id' => $lockedReservation->reference_id,
+                'quantity_change' => $lockedReservation->quantity,
+                'quantity_before' => $before,
+                'quantity_after' => $before - $lockedReservation->quantity,
+            ]);
 
             $lockedReservation->update(['status' => 'committed', 'committed_at' => now()]);
+        }, 3);
+    }
+
+    public function reverseCommitted(StockReservation $reservation, ?int $actorId = null): void
+    {
+        DB::transaction(function () use ($reservation, $actorId) {
+            $lockedReservation = StockReservation::query()->lockForUpdate()->findOrFail($reservation->id);
+            if ($lockedReservation->status !== 'committed') {
+                return;
+            }
+            $item = InventoryItem::query()->lockForUpdate()->findOrFail($lockedReservation->inventory_item_id);
+            $before = $item->quantity_on_hand;
+            $item->increment('quantity_on_hand', $lockedReservation->quantity);
+            $item->increment('lock_version');
+            $item->movements()->create([
+                'actor_id' => $actorId,
+                'movement_type' => 'order_cancel_restore',
+                'reason' => 'Committed stock restored after seller order cancellation.',
+                'reference_type' => $lockedReservation->reference_type,
+                'reference_id' => $lockedReservation->reference_id,
+                'quantity_change' => $lockedReservation->quantity,
+                'quantity_before' => $before,
+                'quantity_after' => $before + $lockedReservation->quantity,
+            ]);
+            $lockedReservation->update(['status' => 'reversed', 'released_at' => now()]);
         }, 3);
     }
 }

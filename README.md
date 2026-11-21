@@ -232,3 +232,74 @@ php artisan storage:link
 - Tax classification is stored as a reference field only. No GST rate or tax formula is inferred.
 - Seller SKU is supplied by the seller; no SKU generation format is assumed.
 - Bulk product import, row-level import reports and idempotent re-import are not part of these two phase deliverables yet.
+
+
+## Phases 6–9 backend implementation package
+
+This package adds backend API foundations for shopping, checkout, payments integration boundaries and seller order fulfilment.
+
+### Phase 6 — Cart and wishlist
+- Signed-in carts are scoped to the authenticated user.
+- Guest carts use a random `X-Guest-Cart-Token`; only its SHA-256 hash is stored.
+- The token is returned in the response header when a guest cart is first created.
+- Guest cart merge requires authentication and the guest token.
+- Wishlist records are scoped to the authenticated user.
+- Cart requests validate active seller offers and available stock; prices are never accepted from the client.
+
+### Phase 7 — Checkout and pricing
+- Checkout quotes require an address owned by the authenticated customer.
+- The quote is calculated from current seller-offer prices and stock on the server.
+- Quote records contain item snapshots and expire after a configurable interval.
+- The initial pricing snapshot deliberately uses zero tax, zero shipping and zero discount and flags those rules as pending. This is a safe technical placeholder, not a production tax/shipping calculation.
+- COD order placement is disabled by default. It can only be enabled after business policy approval using `MARKETPLACE_COD_ENABLED=true`.
+- Online order placement returns HTTP 503 until a payment-provider adapter and approved marketplace settlement model are integrated.
+
+### Phase 8 — Payment integration boundary
+- Payment intent, payment transaction, webhook event and ledger schema are added.
+- The generic webhook endpoint requires an HMAC-SHA256 signature in `X-Provider-Signature` and an explicitly configured secret.
+- Webhook events are idempotent by provider + event ID; payment amount is checked against the stored intent.
+- The payment-intent endpoint intentionally returns 503 until a real provider adapter is implemented and configured.
+- No payment is marked successful from a browser/client request.
+- Ledger tables and an immutable ledger-entry model are provided, but balanced marketplace postings, commission splits, refunds, reconciliation and payout logic are not enabled until finance policy and provider settlement rules are approved.
+
+### Phase 9 — Orders and fulfilment
+- A parent order and seller-specific fulfilment groups are created for an accepted COD order.
+- Order and seller-order state changes are recorded in append-only history rows.
+- Seller order access is scoped to active seller membership and order permissions.
+- A seller can create a shipment record after packing and then mark the group shipped.
+- The current shipment record stores carrier/tracking references; carrier API integration, tracking webhooks, partial shipments, RTO and returns remain follow-up work.
+- COD stock is reserved and committed transactionally when the order is accepted; cancellation before shipment restores stock and records a stock movement.
+
+### Added API endpoints
+- `GET|POST /api/v1/cart`, `POST /api/v1/cart/items`, `PATCH|DELETE /api/v1/cart/items/{item}`
+- `POST /api/v1/cart/merge-guest`
+- `GET /api/v1/wishlist`, `POST /api/v1/wishlist/items`, `DELETE /api/v1/wishlist/items/{item}`
+- `POST /api/v1/checkout/quote`, `POST /api/v1/checkout/{checkout}/place`
+- `POST /api/v1/orders/{order}/payment-intent`
+- `POST /api/v1/webhooks/payments/{provider}`
+- `GET /api/v1/orders`, `GET /api/v1/orders/{order}`
+- `GET /api/v1/seller/accounts/{sellerAccount}/orders`
+- `POST /api/v1/seller/accounts/{sellerAccount}/orders/{sellerOrder}/shipments`
+- `PATCH /api/v1/seller/accounts/{sellerAccount}/orders/{sellerOrder}/status`
+
+### Install and verify
+1. Back up the database and project.
+2. Merge this package into the existing project; preserve `.env` and `.git`.
+3. Run `composer install` only if dependencies changed (no new Composer package is required).
+4. Run `php artisan optimize:clear`.
+5. Run `php artisan migrate` (do not run `migrate:fresh`).
+6. Run `php artisan test`.
+7. Run `vendor\\bin\\pint.bat` and `vendor\\bin\\pint.bat --test`.
+
+### Decisions required before production
+- Approved GST/tax configuration and invoice treatment.
+- Shipping-rate/serviceability provider and shipping charge rules.
+- Coupon/discount rules and who funds each discount.
+- Payment provider, credentials, webhook signing format, marketplace split settlement and refund capabilities.
+- Commission rates and ledger posting policy.
+- COD availability, eligibility and collection/reconciliation process.
+- Reservation expiry, payment timeout and cancellation policy for online payments.
+- Partial shipment/cancellation, return windows, restock and refund policies.
+- Seller/carrier tracking integration and delivery exception workflows.
+
+This is a backend-only package. It does not add the customer storefront, seller dashboard or admin frontend. Payment provider processing, production tax/shipping calculations and finance settlement must not be represented as complete.
