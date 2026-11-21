@@ -16,9 +16,11 @@ use App\Http\Controllers\Api\V1\Catalog\CatalogController;
 use App\Http\Controllers\Api\V1\Checkout\CheckoutController;
 use App\Http\Controllers\Api\V1\Customer\AddressController;
 use App\Http\Controllers\Api\V1\Customer\CustomerProfileController;
+use App\Http\Controllers\Api\V1\Customer\NotificationController;
 use App\Http\Controllers\Api\V1\Orders\OrderController;
 use App\Http\Controllers\Api\V1\Payments\PaymentIntentController;
 use App\Http\Controllers\Api\V1\Payments\PaymentWebhookController;
+use App\Http\Controllers\Api\V1\Seller\DataOperationController;
 use App\Http\Controllers\Api\V1\Seller\InventoryController;
 use App\Http\Controllers\Api\V1\Seller\ProductMediaController;
 use App\Http\Controllers\Api\V1\Seller\SellerAccountController;
@@ -100,6 +102,11 @@ Route::prefix('v1')
                 return ApiResponse::success($request->user());
             })->name('user');
 
+            // Phase 10: in-app order and inventory notifications.
+            Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+            Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead'])->name('notifications.read-all');
+            Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead'])->name('notifications.read');
+
             // Phase 6: Customer wishlist and safe guest-cart merge.
             Route::prefix('wishlist')->name('wishlist.')->group(function (): void {
                 Route::get('/', [WishlistController::class, 'show'])->name('show');
@@ -176,6 +183,16 @@ Route::prefix('v1')
                         ->middleware('permission:inventory.manage')->name('inventory.adjust');
                     Route::put('/offers/{offer}/inventory/threshold', [InventoryController::class, 'threshold'])
                         ->middleware('permission:inventory.manage')->name('inventory.threshold');
+
+                    // Phase 10: asynchronous, seller-scoped inventory data operations.
+                    Route::post('/inventory/import', [DataOperationController::class, 'importInventory'])
+                        ->middleware('permission:inventory.manage')->name('inventory.import');
+                    Route::post('/inventory/export', [DataOperationController::class, 'exportInventory'])
+                        ->middleware('permission:inventory.view')->name('inventory.export');
+                    Route::get('/data-operations/{operation}', [DataOperationController::class, 'show'])
+                        ->name('data-operations.show');
+                    Route::get('/data-operations/{operation}/download', [DataOperationController::class, 'download'])
+                        ->name('data-operations.download');
                 });
 
             // Phase 4: Catalogue moderation.

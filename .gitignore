@@ -32,3 +32,5 @@ database/*.sqlite
 /storage/framework/sessions/*
 /storage/framework/views/*
 /storage/logs/*
+# Generated delivery archives
+*.zip

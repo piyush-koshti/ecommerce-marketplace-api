@@ -1,6 +1,8 @@
 
 <?php
 
+use App\Console\Commands\MarketplaceDatabaseBackup;
+use App\Console\Commands\MarketplaceOperationsStatus;
 use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\CheckRole;
@@ -16,6 +18,7 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
+    ->withCommands([MarketplaceOperationsStatus::class, MarketplaceDatabaseBackup::class])
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',

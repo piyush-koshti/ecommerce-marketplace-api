@@ -7,6 +7,7 @@ use App\Models\InventoryItem;
 use App\Models\SellerAccount;
 use App\Models\SellerOffer;
 use App\Models\User;
+use App\Notifications\LowStockNotification;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,9 +32,10 @@ class InventoryController extends Controller
             'reference_id' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $inventory = DB::transaction(function () use ($offer, $request, $data) {
+        [$inventory, $wasAboveThreshold, $isAtOrBelowThreshold] = DB::transaction(function () use ($offer, $request, $data) {
             $item = InventoryItem::where('seller_offer_id', $offer->id)->lockForUpdate()->firstOrFail();
             $before = $item->quantity_on_hand;
+            $beforeAvailable = $item->available_quantity;
             $after = $before + $data['quantity_change'];
             if ($after < ($item->quantity_reserved + $item->quantity_damaged)) {
                 abort(422, 'Adjustment would reduce stock below reserved and damaged quantities.');
@@ -55,8 +57,29 @@ class InventoryController extends Controller
                 'quantity_after' => $after,
             ]);
 
-            return $item->fresh();
+            $fresh = $item->fresh();
+
+            return [
+                $fresh,
+                $beforeAvailable > $fresh->low_stock_threshold,
+                $fresh->available_quantity <= $fresh->low_stock_threshold,
+            ];
         }, 3);
+
+        if ($wasAboveThreshold && $isAtOrBelowThreshold) {
+            try {
+                $sellerAccount->users()->wherePivot('status', 'active')->get()->each(
+                    fn (User $user) => $user->notify(new LowStockNotification(
+                        $inventory->id,
+                        $offer->seller_sku,
+                        $inventory->available_quantity,
+                        $inventory->low_stock_threshold,
+                    ))
+                );
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
 
         return ApiResponse::success($inventory);
     }

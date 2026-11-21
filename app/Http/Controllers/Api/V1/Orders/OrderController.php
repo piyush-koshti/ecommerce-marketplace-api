@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\SellerOrder;
 use App\Models\StockReservation;
+use App\Notifications\OrderStatusChangedNotification;
 use App\Services\Inventory\StockReservationService;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -128,6 +129,22 @@ class OrderController extends Controller
 
             return $lockedSellerOrder->fresh(['items', 'order']);
         }, 3);
+
+        $latestHistory = $updated->order?->histories()
+            ->where('seller_order_id', $updated->id)
+            ->latest('id')
+            ->first();
+
+        try {
+            $updated->order?->user?->notify(new OrderStatusChangedNotification(
+                $updated->order_id,
+                $updated->id,
+                $latestHistory?->from_status ?? 'unknown',
+                $updated->status,
+            ));
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
 
         return ApiResponse::success($updated);
     }

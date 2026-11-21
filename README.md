@@ -303,3 +303,65 @@ This package adds backend API foundations for shopping, checkout, payments integ
 - Seller/carrier tracking integration and delivery exception workflows.
 
 This is a backend-only package. It does not add the customer storefront, seller dashboard or admin frontend. Payment provider processing, production tax/shipping calculations and finance settlement must not be represented as complete.
+
+
+## Phases 10–14 — Data operations and operational readiness
+
+This backend-only delivery adds the following Phase 10 foundations:
+
+### Seller inventory data operations
+
+| Method | Endpoint | Permission |
+|---|---|---|
+| POST | `/api/v1/seller/accounts/{sellerAccount}/inventory/import` | `inventory.manage` |
+| POST | `/api/v1/seller/accounts/{sellerAccount}/inventory/export` | `inventory.view` or `inventory.manage` |
+| GET | `/api/v1/seller/accounts/{sellerAccount}/data-operations/{operation}` | Request owner + active seller member |
+| GET | `/api/v1/seller/accounts/{sellerAccount}/data-operations/{operation}/download` | Request owner + active seller member |
+
+Inventory import accepts CSV with the exact header:
+
+```csv
+seller_sku,quantity_on_hand,reason
+SKU-100,25,Verified physical stock count
+```
+
+Import limit: 5,000 rows and 10 MiB. The entire file is validated before updates are applied. Unknown SKUs, duplicate SKUs, malformed rows or quantities below reserved plus damaged stock fail the whole import. Each changed inventory row creates a stock movement.
+
+Operations are asynchronous. Configure a queue connection and run:
+
+```bash
+php artisan queue:work database --queue=default --tries=3 --timeout=120
+```
+
+### In-app notifications
+
+- Low-stock notifications are created when an inventory adjustment crosses the low-stock threshold.
+- Seller-order status changes create a notification for the customer.
+- Authenticated endpoints:
+  - `GET /api/v1/notifications`
+  - `PATCH /api/v1/notifications/{notification}/read`
+  - `PATCH /api/v1/notifications/read-all`
+
+Notifications are database-only. Email, SMS, WhatsApp and push providers are not configured.
+
+### Operations commands
+
+```bash
+php artisan marketplace:ops-status
+php artisan marketplace:db-backup
+```
+
+`marketplace:db-backup` supports MySQL and requires `mysqldump` on PATH or `MARKETPLACE_MYSQLDUMP_PATH` configured in `.env`. Backups are written under private `storage/app/private/backups`. This command does not back up media files or copy backups off-site. Restore is documented as a manual procedure for a disposable database only.
+
+### Phase 11–14 status and limitations
+
+- Phase 11: security/performance review checklist and verification commands are documented; full VAPT/load testing still requires local/staging execution.
+- Phase 12: API usability review is documented. The supplied project has no frontend source, so visual accessibility/responsive review is pending.
+- Phase 13: queue, backup, restore, release and rollback runbooks are included.
+- Phase 14: final handover, known limitations, test plan and manual QA checklist are included.
+
+See `docs/implementation/` for phase status and runbooks.
+
+**Architecture boundary:** this repository currently implements a shared marketplace database with seller-account membership isolation. It does not implement a SaaS control plane with a separate business database per tenant. Do not enable database-per-tenant assumptions without an approved architecture migration.
+
+**Phase 15:** no Phase 15 title or scope was included in the supplied roadmap screenshot or saved master roadmap.
